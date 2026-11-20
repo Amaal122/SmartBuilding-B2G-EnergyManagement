@@ -1,3 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Outils / éditeurs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Divers
+*.log
+
+# Données sources volumineuses
 data/raw/train.csv
 *.zip
 .ipynb_checkpoints/
