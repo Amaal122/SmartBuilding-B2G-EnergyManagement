@@ -1051,6 +1051,86 @@ def fig_export_comparison(before: pd.DataFrame, after: pd.DataFrame) -> go.Figur
     return fig
 
 
+def fig_monthly_consumption(monthly: pd.DataFrame) -> go.Figure:
+    """Consommation mensuelle (uniquement si la période couvre plusieurs mois)."""
+    if monthly is None or monthly.empty:
+        return empty_figure("Historique insuffisant pour une agrégation mensuelle.")
+    labels = [pd.Timestamp(value).strftime("%m/%Y") for value in monthly["month"]]
+    fig = go.Figure(
+        go.Bar(
+            x=labels,
+            y=monthly["consumption_kwh"],
+            name="Consommation mensuelle",
+            marker=dict(color=BLUE, line=dict(width=0)),
+            text=[
+                f"{float(value):,.0f}".replace(",", "\u202f")
+                for value in monthly["consumption_kwh"]
+            ],
+            textposition="outside",
+            textfont=dict(size=10, color="#475569"),
+            cliponaxis=False,
+            hovertemplate="%{y:,.0f} kWh<extra></extra>",
+        )
+    )
+    _layout(fig, height=280, show_legend=False, y_title="Énergie (kWh)")
+    return fig
+
+
+def fig_meter_distribution(total_consumption_kwh: float) -> go.Figure:
+    """Répartition par type de compteur (un seul compteur dans le jeu ASHRAE)."""
+    value = max(0.0, float(total_consumption_kwh or 0.0))
+    if value <= 0:
+        return empty_figure("Aucune consommation sur la période.")
+    fig = go.Figure(
+        go.Pie(
+            labels=["Électricité · compteur 0"],
+            values=[value],
+            hole=0.62,
+            marker=dict(colors=[BLUE], line=dict(color="#FFFFFF", width=2)),
+            textinfo="none",
+            sort=False,
+            hovertemplate="%{label}<br>%{value:,.0f} kWh · %{percent}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=270,
+        margin=dict(l=8, r=8, t=20, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=FONT_STACK, size=11, color="#5B6B82"),
+        separators=", ",
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.08,
+            x=0.5,
+            xanchor="center",
+            font=dict(size=10),
+        ),
+        hoverlabel=dict(
+            bgcolor=NAVY,
+            font=dict(color="#FFFFFF", size=11.5, family=FONT_STACK),
+        ),
+        annotations=[
+            dict(
+                text=(
+                    f"<span style='font-size:18px;font-weight:800;color:{NAVY}'>"
+                    f"{value:,.0f}</span>"
+                    "<br><span style='font-size:10px;color:#64748B'>kWh · 100 %</span>"
+                ).replace(",", "\u202f"),
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(family=FONT_STACK),
+                align="center",
+            )
+        ],
+    )
+    return fig
+
+
 def fig_battery_dispatch(result: pd.DataFrame) -> go.Figure:
     """Charge / décharge et SOC sur la fenêtre simulée."""
     if result is None or result.empty:

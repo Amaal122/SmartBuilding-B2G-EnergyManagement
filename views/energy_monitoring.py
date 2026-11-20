@@ -14,6 +14,8 @@ from components.charts import (
     fig_daily_consumption,
     fig_hourly_consumption,
     fig_hourly_profile,
+    fig_meter_distribution,
+    fig_monthly_consumption,
     fig_peak_demand,
     fig_zone_distribution,
     render_chart,
@@ -34,6 +36,7 @@ from services.energy_calculations import (
     daily_summary,
     detect_anomalies,
     hourly_profile,
+    monthly_summary,
 )
 from utils import calculations as calc
 from utils import formatting as fmt
@@ -220,8 +223,10 @@ def render(ctx: ScenarioContext, config: dict[str, Any]) -> None:
             tag="MÉTADONNÉES",
             icon_name="database",
         )
-        st.markdown(
-            f"""
+        meter_left, meter_right = st.columns([1.4, 1.0], gap="medium")
+        with meter_left:
+            st.markdown(
+                f"""
 <div class="dataset-facts" style="border-top:none;padding-top:0">
   <div><div class="k">Compteur</div><div class="v">Électricité · meter 0</div></div>
   <div><div class="k">Bâtiment</div><div class="v">#{ctx.building_id} · site {ctx.site_id}</div></div>
@@ -230,11 +235,15 @@ def render(ctx: ScenarioContext, config: dict[str, Any]) -> None:
 </div>
 <div class="upload-note" style="margin-top:10px">
   Le jeu traité ne contient que le compteur électrique (0). Aucune donnée de chauffage,
-  vapeur ou eau glacée n'est disponible : aucun graphique par type de compteur n'est simulé.
+  vapeur ou eau glacée n'est disponible : aucune autre catégorie n'est simulée.
 </div>
 """,
-            unsafe_allow_html=True,
-        )
+                unsafe_allow_html=True,
+            )
+        with meter_right:
+            render_chart(
+                fig_meter_distribution(total), key="en_meter"
+            )
 
     # ------------------------------------------------------------------
     # Graphiques
@@ -288,6 +297,23 @@ def render(ctx: ScenarioContext, config: dict[str, Any]) -> None:
             )
             render_chart(
                 fig_hourly_profile(hourly_profile(filtered_frame)), key="en_profile"
+            )
+
+    monthly = monthly_summary(filtered_frame)
+    with st.container(border=True):
+        panel_head(
+            "Consommation mensuelle",
+            "Agrégation disponible uniquement si l'historique couvre plusieurs mois",
+            tag="kWh / mois",
+            icon_name="calendar",
+        )
+        if len(monthly) >= 2:
+            render_chart(fig_monthly_consumption(monthly), key="en_monthly")
+        else:
+            st.info(
+                "La période filtrée ne couvre qu'un seul mois calendaire : "
+                "l'agrégation mensuelle n'est pas pertinente. Utilisez la plage complète "
+                "(13 mai – 15 juin) pour comparer mai et juin."
             )
 
     # ------------------------------------------------------------------

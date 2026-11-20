@@ -127,6 +127,32 @@ def render(ctx: ScenarioContext, config: dict[str, Any]) -> None:
     if not end_use.empty:
         end_use = end_use[end_use["timestamp"] >= period["timestamp"].min()]
 
+    # Filtre de dates précis, en complément des raccourcis 24 h / 7 j / 14 j.
+    use_custom = False
+    with st.expander("Filtrer par une plage de dates précise", expanded=False):
+        min_day = fmt.to_date(df["timestamp"].min())
+        max_day = fmt.to_date(df["timestamp"].max())
+        custom_col_1, custom_col_2 = st.columns(2)
+        with custom_col_1:
+            custom_start = st.date_input(
+                "Du", value=min_day, min_value=min_day, max_value=max_day,
+                format="DD/MM/YYYY", key="ov_custom_start",
+            )
+        with custom_col_2:
+            custom_end = st.date_input(
+                "Au", value=max_day, min_value=min_day, max_value=max_day,
+                format="DD/MM/YYYY", key="ov_custom_end",
+            )
+        use_custom = st.checkbox("Appliquer cette plage", key="ov_use_custom")
+    if use_custom:
+        period = calc.filter_date_range(df, custom_start, custom_end)
+        previous = period.iloc[0:0].copy()
+        kpis = energy_kpis(period)
+        previous_kpis = energy_kpis(previous)
+        days = max(1, len(period) // 24)
+        if not end_use.empty and not period.empty:
+            end_use = end_use[end_use["timestamp"] >= period["timestamp"].min()]
+
     last_ts = calc.latest_timestamp(df)
     with control_right:
         st.markdown(
