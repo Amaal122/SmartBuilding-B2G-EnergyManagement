@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from services import energy_calculations as _energy
 from utils import formatting as fmt
 
 # Seuils de démonstration (non contractuels).
@@ -788,3 +789,16 @@ def estimated_cost(kpis: dict[str, Any], price_per_kwh: float) -> float | None:
     if imported is None or not np.isfinite(imported):
         return None
     return float(imported) * float(price_per_kwh)
+
+
+# ---------------------------------------------------------------------------
+# Délégation aux services canoniques
+# ---------------------------------------------------------------------------
+# Les fonctions numériques principales sont implémentées et testées une seule
+# fois dans services/energy_calculations.py. Les alias ci-dessus gardent la
+# compatibilité avec les vues historiques qui importent ``utils.calculations``.
+_safe_divide = _energy.safe_divide
+energy_kpis = _energy.energy_kpis
+comparison = _energy.comparison
+daily_summary = _energy.daily_summary
+period_days = _energy.period_days

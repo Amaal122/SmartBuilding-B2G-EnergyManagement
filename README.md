@@ -1,57 +1,92 @@
 # SBEMS — Smart Building Energy Management System
 
-Démonstrateur **front-end** de supervision énergétique d'un bâtiment tertiaire,
-développé avec **Streamlit**, **Pandas**, **NumPy** et **Plotly**.
+Plateforme Streamlit de supervision énergétique d'un bâtiment tertiaire, développée
+pour un projet d'ingénierie **Smart Building / Building-to-Grid (B2G)**.
 
-> **DEMO MODE – SIMULATED DATA**
->
-> Toutes les mesures, alertes, puissances, températures, occupations et états
-> d'équipement sont **générés localement et simulés**. Aucun capteur, compteur,
-> onduleur, BMS, passerelle IoT, base de données ou API n'est connecté.
-> Aucune commande physique n'est envoyée depuis l'interface.
+> **DEMO MODE – SIMULATED DATA** — L'application n'est connectée à aucun capteur,
+> compteur, onduleur, BMS, backend, base de données ou API. Aucune commande
+> physique n'est envoyée. Les valeurs **réelles** proviennent exclusivement de
+> fichiers CSV historiques intégrés au projet (branche `hanine`).
 
 ---
 
-## 1. Aperçu
+## 1. Ce que fait l'application
 
-L'application propose six pages en français, accessibles depuis la barre latérale :
-
-| Page | Contenu |
+| Page | Contenu principal |
 | --- | --- |
-| **Vue Générale** | KPI du jour, équilibre énergétique, production solaire, autoconsommation, alertes de démonstration, coûts indicatifs. |
-| **Surveillance Énergétique** | Filtres interactifs (dates, plage horaire, zones), consommation horaire, journal des mesures, analyse des pointes, export CSV. |
-| **Production Photovoltaïque** | Périodes 24 h / 7 j / 14 j, puissance solaire, production journalière, autoconsommation, répartition horaire, fiche de l'installation. |
-| **Batterie & Réseau** | État de charge (SOC), cycles illustratifs, import/export réseau, surplus PV, Sankey du bilan, synthèse chiffrée. |
-| **Environnement & Équipements** | Températures, humidité, occupation, éclairage, CVC, inventaire des équipements, protocoles d'intégration futurs. |
-| **Données & Configuration** | Aperçu des jeux de données, imports CSV (visuels), paramètres du bâtiment et tarif, diagnostic système. |
-
-Le bandeau **DEMO MODE – SIMULATED DATA** et les mentions de pied de page
-rappellent ce cadre à chaque écran.
+| **Vue Générale** | KPI (consommation, PV, import, surplus, autoconsommation, pointe), courbes consommation/PV, répartition par usage, sources d'énergie, profil horaire, bilan et diagramme de flux, alertes statistiques. |
+| **Surveillance Énergétique** | Filtres dates / plage horaire / zones, hourly & daily, pointes, profil horaire, **comparaison entre bâtiments réels**, détection d'anomalies par score Z, journal filtrable et export CSV. |
+| **Production Photovoltaïque** | Production réelle de la centrale n°1 (source 15 min, agrégée à l'heure), météo et irradiation, qualité des mesures, comparaison PV/consommation, répartition horaire. |
+| **Batterie & Réseau** | Simulation A/B configurable (sans / avec batterie), SOC, charge/décharge, import/export réseau, contrôle de conservation de l'énergie, analyse économique estimative. |
+| **Environnement & Équipements** | Météo réelle (température, vent, nébulosité, point de rosée, précipitations), ambiance intérieure simulée, inventaire des équipements et préparation MQTT/Modbus/BACnet. |
+| **Données & Configuration** | Inventaire des 7 jeux réels, dimensions/colonnes/types/manquants/couverture/fréquence, import CSV/XLSX validé, export du scénario, paramètres de simulation et diagnostic système. |
 
 ---
 
-## 2. Installation et lancement
+## 2. Données sources (branche `hanine`)
 
-Prérequis : **Python 3.10+** (testé avec Python 3.13 sous Windows).
+Les fichiers suivants ont été repris tels quels de la branche `hanine` du dépôt
+et placés dans `data/raw/` et `data/processed/` :
+
+| Fichier | Origine | Contenu | Utilisation |
+| --- | --- | --- | --- |
+| `data/processed/electricity_office.csv` | ASHRAE Great Energy Predictor III | 180 076 lignes, 243 bâtiments, compteur électrique 0, 2016 | Consommation réelle (174 bâtiments éligibles) |
+| `data/processed/solar_final.csv` | Centrale PV n°1 | 744 heures, 2020, agrégation de mesures 15 min | Production PV réelle + irradiation/températures |
+| `data/raw/weather_train.csv` | ASHRAE | Météo horaire par site, 2016 | Température, vent, nébulosité, précipitations réelles |
+| `data/raw/building_metadata (1).csv` | ASHRAE | Usage, surface, site, année | Sélection et métadonnées des bâtiments |
+| `data/processed/smart_building.csv` | Hanine | Scénario aligné 744 h | Référence de validation (36 309 kWh / 27 232 kWh) |
+| `data/raw/Plant_1_Generation_Data.csv` | Centrale PV | 15 min, 22 onduleurs | Traçabilité / nombre d'onduleurs |
+| `data/raw/Plant_1_Weather_Sensor_Data.csv` | Centrale PV | 15 min | Traçabilité météo centrale |
+
+**Bâtiment par défaut : #520** (site 3, 27 600 pi², 744 heures complètes, aucune
+valeur nulle, moyenne 48,8 kWh/h). Il reproduit exactement le scénario préparé
+par Hanine. Un sélecteur permet de choisir parmi les **174 bâtiments éligibles**.
+
+### Alignement des installations
+
+Les deux jeux ne décrivent **pas le même bâtiment** :
+
+1. les horodatages PV 2020 sont projetés sur 2016 puis décalés de 2 jours
+   (`date.replace(year=2016) − 2 jours`) ;
+2. la production de la centrale est multipliée par un facteur afin de couvrir
+   75 % de la consommation du bâtiment ASHRAE (paramètre modifiable) ;
+3. les trois journées absentes des jeux sources sont conservées comme telles
+   (aucune donnée n'est inventée).
+
+Le bilan affiché est donc un **scénario modélisé**, pas une mesure effectuée sur
+un site réel unique. L'interface l'indique sur chaque page.
+
+Résultat de référence (bâtiment 520, couverture 75 %) :
+
+| Indicateur | Valeur |
+| --- | --- |
+| Consommation réelle | 36 309,35 kWh |
+| PV réel mis à l'échelle | 27 232,01 kWh |
+| Import réseau calculé | 17 069,91 kWh |
+| Surplus calculé | 7 992,58 kWh |
+| Taux d'autoconsommation | 70,65 % |
+| Taux d'autosuffisance | 52,99 % |
+
+---
+
+## 3. Installation et lancement
+
+Prérequis : **Python 3.10+** (testé avec Python 3.12/3.13 sous Windows).
 
 ```bash
-# 1. Créer et activer un environnement virtuel (recommandé)
 python -m venv .venv
-# Windows PowerShell
+# Windows
 .\.venv\Scripts\Activate.ps1
 # macOS / Linux
 source .venv/bin/activate
 
-# 2. Installer les dépendances
 pip install -r requirements.txt
-
-# 3. Lancer l'application
 streamlit run app.py
 ```
 
-L'application s'ouvre par défaut sur <http://localhost:8501>.
+L'application s'ouvre sur <http://localhost:8501>.
 
-Pour un lancement sans navigateur (CI, serveur distant) :
+Pour un serveur sans navigateur :
 
 ```bash
 streamlit run app.py --server.headless true --server.port 8501
@@ -59,157 +94,155 @@ streamlit run app.py --server.headless true --server.port 8501
 
 ---
 
-## 3. Structure du projet
+## 4. Architecture
 
 ```
-Smart-Building/
-├── app.py                      # Point d'entrée, configuration de page et routage
+SBEMS/
+├── app.py                       # configuration de page, contexte, routage
 ├── requirements.txt
 ├── README.md
-├── .streamlit/
-│   └── config.toml             # Thème Streamlit (couleurs, typographie)
-├── assets/
-│   └── logo.png                # Logo SBEMS (généré localement)
-├── components/
-│   ├── charts.py               # Figures Plotly et rendu commun
-│   ├── energy_flow.py          # Diagramme de flux SVG
-│   ├── header.py               # En-tête, badge démo, horloge, bâtiment
-│   ├── kpi_cards.py            # Cartes KPI et sparklines
-│   ├── sidebar.py              # Navigation, statut de démonstration
-│   └── ui.py                   # Alertes, capteurs, tableaux, panneaux, footer
+├── .streamlit/config.toml
+├── assets/logo.png
 ├── data/
-│   └── mock_data.py            # Génération déterministe des données simulées
-├── utils/
-│   ├── calculations.py         # Fenêtres temporelles, KPI, alertes, seuils
-│   ├── config.py               # Configuration de session et devises
-│   ├── formatting.py           # Formats français (nombres, dates, énergie)
-│   ├── icons.py                # Bibliothèque d'icônes SVG
-│   └── theme.py                # Feuille de style CSS du design system
-└── views/
-    ├── overview.py
-    ├── energy_monitoring.py
-    ├── solar_production.py
-    ├── battery_grid.py
-    ├── environment.py
-    └── settings.py
+│   ├── data_loader.py           # lecture CSV robuste + cache Streamlit
+│   ├── data_cleaning.py         # nettoyage, doublons, IQR, qualité
+│   ├── data_processing.py       # alignement, scénario, zones, usages
+│   ├── data_validation.py       # contrôles de cohérence et de saisie
+│   ├── repository.py            # ScenarioContext et accès unique aux données
+│   ├── mock_data.py             # constantes conservées (compatibilité)
+│   ├── raw/                     # CSV réels ASHRAE et centrale PV
+│   └── processed/               # jeux préparés par la branche hanine
+├── services/
+│   ├── energy_calculations.py   # KPI, bilans, ratios, anomalies Z-score
+│   ├── battery_simulation.py    # dispatch A/B, rendements, conservation
+│   └── economic_analysis.py     # coûts, économies, payback estimé
+├── components/                  # UI réutilisable (inchangée dans l'esprit)
+├── utils/                       # calculs historiques, formatage, thème, config
+├── views/                       # les six pages
+└── tests/                       # unittest (21 tests)
 ```
 
-La navigation utilise un `st.radio` personnalisé dans `components/sidebar.py`
-plutôt que le menu multipage natif de Streamlit, afin de contrôler entièrement
-l'apparence de la barre latérale.
+Le flux de données est le suivant :
+
+```
+CSV réels → data_loader → data_cleaning/validation → data_processing
+          → repository.ScenarioContext → views → components (Plotly / HTML)
+```
+
+Les pages ne lisent jamais directement les fichiers. Pour brancher une base
+temporelle ou un flux MQTT plus tard, seul `data/data_loader.py` doit changer.
 
 ---
 
-## 4. Données simulées
+## 5. Calculs implémentés
 
-`data/mock_data.py` génère **14 jours de mesures horaires** (336 lignes) avec une
-graine fixe (`SEED = 20261119`). Les séries restent donc identiques d'un
-rafraîchissement à l'autre.
-
-Caractéristiques principales :
-
-- profils de consommation réalistes (activité bureaux, HVAC, éclairage) ;
-- production PV suivant un profil solaire simplifié (lever ≈ 7 h, coucher ≈ 18 h,
-  nébulosité scénarisée) ;
-- température intérieure/extérieure, humidité, occupation et éclairage ;
-- état de charge batterie (SOC) et cycles de charge/décharge **illustratifs** ;
-- répartition par zone (RDC, étages, toiture) et par usage final.
-
-### Équilibre énergétique simplifié
+### Bilan simplifié (sans batterie)
 
 ```text
-grid_import = max(0, consommation − production_PV)
-surplus     = max(0, production_PV − consommation)
+self_consumed = min(consommation, production_PV)
+grid_import   = max(0, consommation − production_PV)
+grid_export   = max(0, production_PV − consommation)
+SCR           = self_consumed / production_PV × 100   # autoconsommation
+SSR           = self_consumed / consommation × 100    # autosuffisance
 ```
 
-Une même énergie n'est jamais comptée simultanément en import et en export.
-**Le dispatch batterie est exclu de ce bilan** : la charge et la décharge sont
-affichées à titre pédagogique et ne modifient pas le solde réseau.
+Toutes les divisions sont protégées contre le dénominateur nul. Un import et un
+export ne sont jamais comptés simultanément sur le même pas horaire.
 
-### Points d'accès aux données
+### Simulation batterie (scénario B)
 
-Les vues ne consomment que trois fonctions de `data/mock_data.py` :
+À chaque heure : le PV alimente la charge, le surplus charge la batterie puis
+est exporté ; le déficit est couvert par la décharge puis par le réseau.
 
-- `get_energy_data()` — série horaire principale ;
-- `get_zone_data()` — mesures par zone du bâtiment ;
-- `get_end_use_data()` — répartition par usage final.
+- capacité, SOC initial, SOC min/max, puissances de charge/décharge et
+  rendements sont configurables ;
+- l'énergie stockée est plafonnée par la capacité et bornée par le SOC ;
+- l'énergie restituée est limitée par la puissance de décharge ;
+- les pertes de conversion sont comptabilisées ;
 
-Pour brancher un backend réel (CSV ASHRAE, base de données, MQTT, Modbus TCP,
-BACnet/IP), il suffit de remplacer ces implémentations : les pages et les
-composants restent inchangés.
+Les deux équations vérifiées à chaque pas :
 
----
+```text
+PV        = direct + charge_prélevée + export
+Consommation = direct + décharge_livrée + import
+```
 
-## 5. Fonctionnalités interactives
+Le test `check_energy_conservation()` contrôle ces égalités.
 
-- **Filtres de la page Surveillance** : plage de dates (format `JJ/MM/AAAA`),
-  plage horaire, sélection multiple de zones. Les KPI, graphiques et le journal
-  se recalculent immédiatement.
-- **Périodes 24 h / 7 j / 14 j** sur la page photovoltaïque, avec comparaison à
-  la période précédente.
-- **Export CSV** du journal des mesures filtré (encodage UTF-8 avec BOM pour
-  Excel).
-- **Formulaire de configuration** : nom du bâtiment, localisation, puissance
-  PV installée, capacité batterie, devise et coût du kWh. Les valeurs sont
-  conservées pendant la session uniquement ; le bouton **Réinitialiser**
-  restaure les valeurs par défaut.
-- **Imports CSV** : contrôles visuels de préparation, sans analyse ni
-  persistance des fichiers.
+### Anomalies
 
----
+Méthode statistique simple **score Z** (moyenne / écart-type), sur les séries
+horaire et journalière, avec un seuil par défaut de |z| ≥ 3. Il ne s'agit **pas**
+d'un modèle d'apprentissage automatique.
 
-## 6. Limites de la version
+### Économie
 
-- Aucune persistance : la configuration et les imports disparaissent au
-  redémarrage.
-- Aucune authentification ni gestion multi-utilisateurs.
-- Les alertes sont des constats de surveillance, jamais des actions de
-  pilotage.
-- Les statuts, seuils (pointe 68 kW, SOC bas 30 %/20 %, etc.) et tarifs sont
-  des hypothèses de démonstration non contractuelles.
-- Les fichiers CSV importés ne sont ni lus ni validés.
+- coût net = import × prix d'achat − export × prix de revente ;
+- économie annualisée = économie observée sur la période × 8760 / heures ;
+- retour simple = investissement batterie / économie annualisée ;
+-Maintenance et dégradation sont des hypothèses simples.
 
-### Pistes d'intégration backend
-
-1. Remplacer `data/mock_data.py` par un connecteur CSV ASHRAE ou une base
-   temporelle (TimescaleDB, InfluxDB, PostgreSQL).
-2. Ajouter un client MQTT pour les mesures temps réel et un cache de session.
-3. Exposer les mêmes structures de données pour Modbus TCP / BACnet/IP.
-4. Persister la configuration et l'historique des alertes.
-5. Ajouter authentification, rôles et journal d'audit avant tout pilotage réel.
+Tous les tarifs sont **configurables** et présentés comme des estimations, jamais
+comme des tarifs vérifiés ou des économies mesurées.
 
 ---
 
-## 7. Vérifications rapides
+## 6. Origine des valeurs affichées
+
+| Catégorie | Exemples | Origine |
+| --- | --- | --- |
+| **REAL DATA** | Consommation ASHRAE, production centrale PV, température extérieure, vent, irradiation | CSV historiques réels |
+| **MODELED SCENARIO** | Bilan combiné consommation/PV, import/surplus, ratio de couverture, répartition par zone et par usage | Calculs à partir des données réelles + hypothèses documentées |
+| **SIMULATED DATA** | Batterie, SOC, coûts, économies, confort intérieur, humidité, occupation, éclairage, CVC, statuts IoT | Modèles locaux, aucun équipement connecté |
+
+Chaque page affiche un bandeau de provenance et le badge
+`DEMO MODE – SIMULATED DATA`.
+
+---
+
+## 7. Tests
 
 ```bash
-python -m compileall -q app.py components data utils views
-streamlit run app.py
+python -m unittest discover -s tests -v
 ```
 
-Parcours de contrôle conseillé :
+21 tests couvrent :
 
-1. Vue Générale : KPI, cinq alertes, diagramme de flux, coût estimé.
-2. Surveillance : modifier la plage horaire et retirer une zone.
-3. Photovoltaïque : basculer entre 24 heures, 7 jours et 14 jours.
-4. Batterie & Réseau : vérifier la cohérence import/surplus et la synthèse.
-5. Environnement : table d'inventaire et équipement hors ligne.
-6. Données & Configuration : enregistrer un nouveau nom, naviguer, puis
-   réinitialiser.
+- division sûre, bilan réseau sans double comptage, SCR vs SSR, KPI ;
+- agrégations journalières/horaires, détection d'anomalies et petits échantillons ;
+- alignement 2020 → 2016, scénario de référence (744 h / 36 309 kWh / 27 232 kWh) ;
+- conservation des zones et usages, validation d'un bilan corrompu ;
+- nettoyage des doublons et valeurs négatives, bâtiments éligibles ;
+- simulation batterie : conservation, limites SOC/puissance, rendements, capacité nulle ;
+- analyse économique : retour simple et cas sans économie.
 
----
-
-## 8. Stack technique
-
-- [Streamlit](https://streamlit.io/) ≥ 1.40
-- [Pandas](https://pandas.pydata.org/) ≥ 2.1
-- [NumPy](https://numpy.org/) ≥ 1.26
-- [Plotly](https://plotly.com/python/) ≥ 5.20
-
-Interface, textes et formats : **français**. Les acronymes métier (BEMS, B2G,
-HVAC, PV, SOC, MQTT, Modbus, BACnet) sont conservés.
+Vérification UI effectuée avec Playwright/Chrome : ouverture des six pages,
+sélecteur de bâtiment, changement de période PV, modification de la capacité
+batterie, exports CSV, import CSV validé, sauvegarde/réinitialisation de la
+configuration, **0 erreur console**.
 
 ---
 
-*SBEMS v1.0.0 — démonstrateur front-end. Toutes les valeurs affichées sont
-simulées.*
+## 8. Limites
+
+- Les trois journées absentes des jeux ASHRAE/PV ne sont pas interpolées : le
+  scénario compte 744 heures sur une fenêtre calendaire de 816 heures.
+- La répartition par zone et par usage final est une estimation : un seul
+  compteur global est disponible.
+- Les données de confort intérieur et d'occupation sont simulées.
+- Aucune donnée à 15 minutes n'est affichée : la centrale est agrégée à l'heure,
+  comme dans le jeu préparé par Hanine.
+- Le tarif d'électricité, le coût de la batterie et le prix d'export sont des
+  hypothèses saisies par l'utilisateur.
+- Aucune persistanceBackend, authentification ou pilotage temps réel.
+
+### Intégration future
+
+1. Remplacer `data/data_loader.py` par un connecteur base temporelle / MQTT.
+2. Connecter les compteurs et onduleurs via Modbus TCP ou BACnet/IP.
+3. Persister la configuration et l'historique des alertes.
+4. Ajouter authentification, rôles et journal d'audit avant tout pilotage réel.
+
+---
+
+*SBEMS v2.0.0 — données historiques réelles, scénario modélisé, batterie simulée.*

@@ -791,7 +791,7 @@ def fig_temperature_trend(df: pd.DataFrame) -> go.Figure:
         )
     )
     _layout(fig, height=300, y_title="Température (°C)")
-    fig.update_yaxes(ticksuffix=" °C")
+    fig.layout.yaxis.ticksuffix = " °C"
     _time_axis(fig, df)
     return fig
 
@@ -814,4 +814,289 @@ def fig_occupancy(df: pd.DataFrame) -> go.Figure:
     _layout(fig, height=300, show_legend=False, y_title="Personnes estimées")
     fig.update_yaxes(rangemode="tozero")
     _time_axis(fig, df)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Graphiques ajoutés pour les données réelles et la simulation batterie
+# ---------------------------------------------------------------------------
+def fig_hourly_profile(profile: pd.DataFrame) -> go.Figure:
+    """Profil moyen par heure de la journée (consommation et PV)."""
+    if profile is None or profile.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=profile["hour"],
+            y=profile["consumption_kwh"],
+            name="Consommation moyenne",
+            marker=dict(color=hex_to_rgba(BLUE, 0.75), line=dict(width=0)),
+            hovertemplate="%{x} h · consommation : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=profile["hour"],
+            y=profile["solar_production_kwh"],
+            name="Production PV moyenne",
+            mode="lines+markers",
+            line=dict(color=GREEN, width=2.4),
+            marker=dict(size=5, color=GREEN),
+            hovertemplate="%{x} h · PV : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    _layout(fig, height=300, y_title="Énergie moyenne (kWh)")
+    fig.update_xaxes(
+        title=dict(text="Heure de la journée", font=dict(size=10.5)),
+        tickmode="linear",
+        dtick=2,
+    )
+    return fig
+
+
+def fig_building_comparison(comparison: pd.DataFrame) -> go.Figure:
+    """Consommation journalière réelle de plusieurs bâtiments ASHRAE."""
+    if comparison is None or comparison.empty:
+        return empty_figure("Aucun bâtiment sélectionné.")
+    work = comparison.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"])
+    work["date"] = work["timestamp"].dt.normalize()
+    daily = (
+        work.groupby(["date", "building_id"], as_index=False)["consumption_kwh"]
+        .sum()
+        .sort_values("date")
+    )
+    fig = go.Figure()
+    for building_id, group in daily.groupby("building_id"):
+        fig.add_trace(
+            go.Scatter(
+                x=group["date"],
+                y=group["consumption_kwh"],
+                name=f"Bâtiment {int(building_id)}",
+                mode="lines+markers",
+                line=dict(width=1.8),
+                marker=dict(size=4),
+                hovertemplate=(
+                    f"Bâtiment {int(building_id)}<br>%{{x|%d/%m/%Y}}"
+                    " · %{y:,.0f} kWh<extra></extra>"
+                ),
+            )
+        )
+    _layout(fig, height=330, y_title="Consommation journalière (kWh)")
+    fig.update_xaxes(tickformat="%d/%m", nticks=10)
+    return fig
+
+
+def fig_anomalies(
+    df: pd.DataFrame, anomalies: pd.DataFrame, thresholds: dict[str, float | None]
+) -> go.Figure:
+    """Série de consommation avec points atypiques et bornes ±3σ."""
+    if df is None or df.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["consumption_kwh"],
+            name="Consommation réelle",
+            mode="lines",
+            line=dict(color=BLUE, width=1.7),
+            hovertemplate="%{y:.1f} kWh<extra></extra>",
+        )
+    )
+    for key, color, label in (
+        ("high", RED, "Seuil haut (+3σ)"),
+        ("low", SKY, "Seuil bas (−3σ)"),
+    ):
+        value = thresholds.get(key)
+        if value is not None and np.isfinite(value):
+            fig.add_hline(
+                y=value,
+                line=dict(color=color, width=1.1, dash="dash"),
+                annotation_text=label,
+                annotation_position="top left",
+                annotation_font=dict(size=9, color=color),
+            )
+    if anomalies is not None and not anomalies.empty:
+        hourly = anomalies[anomalies["scale"] == "Horaire"]
+        if not hourly.empty:
+            colors = [
+                RED if severity == "Critique" else AMBER
+                for severity in hourly["severity"]
+            ]
+            fig.add_trace(
+                go.Scatter(
+                    x=hourly["timestamp"],
+                    y=hourly["value"],
+                    name="Valeur atypique",
+                    mode="markers",
+                    marker=dict(color=colors, size=9, line=dict(color="#FFFFFF", width=1.5)),
+                    customdata=np.stack(
+                        [hourly["zscore"], hourly["direction"]], axis=-1
+                    ),
+                    hovertemplate=(
+                        "%{x|%d/%m/%Y %H:%M}<br>%{y:.1f} kWh"
+                        "<br>Score Z : %{customdata[0]:.2f} (%{customdata[1]})"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+    _layout(fig, height=330, y_title="Consommation horaire (kWh)")
+    _time_axis(fig, df)
+    return fig
+
+
+def fig_weather_overview(df: pd.DataFrame) -> go.Figure:
+    """Température extérieure réelle et irradiation PV sur deux axes."""
+    if df is None or df.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["temperature_outdoor"],
+            name="Température extérieure (site ASHRAE)",
+            mode="lines",
+            line=dict(color=SKY, width=2.1),
+            hovertemplate="%{y:.1f} °C<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["irradiation"],
+            name="Irradiation (centrale PV)",
+            mode="lines",
+            line=dict(color=AMBER, width=1.4),
+            yaxis="y2",
+            hovertemplate="%{y:.0f} W/m²<extra></extra>",
+        )
+    )
+    _layout(fig, height=300, y_title="Température (°C)")
+    fig.update_layout(
+        yaxis2=dict(
+            title=dict(text="Irradiation (W/m²)", font=dict(size=10.5)),
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            tickfont=dict(size=10),
+        )
+    )
+    fig.update_yaxes(ticksuffix=" °C")
+    _time_axis(fig, df)
+    return fig
+
+
+def fig_dispatch_comparison(before: pd.DataFrame, after: pd.DataFrame) -> go.Figure:
+    """Comparaison A/B des imports réseau (scénarios sans / avec batterie)."""
+    if before is None or after is None or before.empty or after.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=before["timestamp"],
+            y=before["grid_import_kwh"],
+            name="Scénario A · sans batterie",
+            mode="lines",
+            line=dict(color=SLATE, width=1.6, dash="dot"),
+            hovertemplate="Import A : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=after["timestamp"],
+            y=after["grid_import_kwh"],
+            name="Scénario B · avec batterie",
+            mode="lines",
+            line=dict(color=BLUE, width=2.0),
+            fill="tozeroy",
+            fillcolor=hex_to_rgba(BLUE, 0.08),
+            hovertemplate="Import B : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    _layout(fig, height=320, y_title="Import réseau horaire (kWh)")
+    _time_axis(fig, before)
+    return fig
+
+
+def fig_export_comparison(before: pd.DataFrame, after: pd.DataFrame) -> go.Figure:
+    """Comparaison A/B des surplus exportés."""
+    if before is None or after is None or before.empty or after.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=before["timestamp"],
+            y=before["grid_export_kwh"],
+            name="Scénario A · sans batterie",
+            mode="lines",
+            line=dict(color=MINT, width=1.5, dash="dot"),
+            hovertemplate="Export A : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=after["timestamp"],
+            y=after["grid_export_kwh"],
+            name="Scénario B · avec batterie",
+            mode="lines",
+            line=dict(color=GREEN, width=2.0),
+            fill="tozeroy",
+            fillcolor=hex_to_rgba(GREEN, 0.10),
+            hovertemplate="Export B : %{y:.1f} kWh<extra></extra>",
+        )
+    )
+    _layout(fig, height=300, y_title="Surplus exporté horaire (kWh)")
+    _time_axis(fig, before)
+    return fig
+
+
+def fig_battery_dispatch(result: pd.DataFrame) -> go.Figure:
+    """Charge / décharge et SOC sur la fenêtre simulée."""
+    if result is None or result.empty:
+        return empty_figure()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=result["timestamp"],
+            y=result["battery_charge_kwh"],
+            name="Charge (simulée)",
+            marker=dict(color=hex_to_rgba(GREEN, 0.75), line=dict(width=0)),
+            hovertemplate="Charge : %{y:.2f} kWh<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=result["timestamp"],
+            y=-result["battery_discharge_kwh"],
+            name="Décharge (simulée)",
+            marker=dict(color=hex_to_rgba(AMBER, 0.85), line=dict(width=0)),
+            hovertemplate="Décharge : %{y:.2f} kWh<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=result["timestamp"],
+            y=result["battery_soc"],
+            name="SOC",
+            mode="lines",
+            line=dict(color=NAVY, width=2),
+            yaxis="y2",
+            hovertemplate="SOC : %{y:.1f} %<extra></extra>",
+        )
+    )
+    _layout(fig, height=330, y_title="Flux batterie (kWh)")
+    fig.update_layout(
+        barmode="relative",
+        yaxis2=dict(
+            title=dict(text="SOC (%)", font=dict(size=10.5)),
+            overlaying="y",
+            side="right",
+            range=[0, 100],
+            showgrid=False,
+            ticksuffix=" %",
+            tickfont=dict(size=10),
+        ),
+    )
+    _time_axis(fig, result)
     return fig

@@ -1,4 +1,4 @@
-"""Page 2 — Surveillance Énergétique."""
+"""Page 2 — Surveillance Énergétique (consommation ASHRAE réelle)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ import pandas as pd
 import streamlit as st
 
 from components.charts import (
+    fig_anomalies,
+    fig_building_comparison,
     fig_daily_consumption,
     fig_hourly_consumption,
+    fig_hourly_profile,
     fig_peak_demand,
     fig_zone_distribution,
     render_chart,
@@ -23,18 +26,26 @@ from components.ui import (
     section_heading,
     status_pill,
 )
-from data.mock_data import ZONE_NAMES, get_zone_data
+from data import repository
+from data.data_processing import ZONE_NAMES
+from data.repository import ScenarioContext
+from services.energy_calculations import (
+    anomaly_thresholds,
+    daily_summary,
+    detect_anomalies,
+    hourly_profile,
+)
 from utils import calculations as calc
 from utils import formatting as fmt
 from utils.icons import icon
 
 
-def _status_for_power(power_kw: float) -> str:
-    if power_kw >= calc.PEAK_POWER_THRESHOLD_KW:
+def _status_for_power(power_kw: float, threshold: float) -> str:
+    if power_kw >= threshold:
         return "Critique"
-    if power_kw >= calc.PEAK_POWER_THRESHOLD_KW * 0.76:
+    if power_kw >= threshold * 0.76:
         return "Élevé"
-    if power_kw < 20:
+    if power_kw < threshold * 0.30:
         return "Faible"
     return "Normal"
 
@@ -49,18 +60,23 @@ def _style_status(value: str) -> str:
     return f"color: {colors.get(value, '#334155')}; font-weight: 700;"
 
 
-def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
+def render(ctx: ScenarioContext, config: dict[str, Any]) -> None:
     render_header(
         "Surveillance Énergétique",
-        "Analyse de la consommation électrique du bâtiment par heure, par jour et par zone. "
-        "Filtres interactifs appliqués à un jeu de mesures simulées.",
+        "Analyse de la consommation électrique réelle (ASHRAE, compteur 0) : "
+        "heures, jours, pointes, anomalies statistiques et comparaison de bâtiments.",
         config,
     )
 
-    zone_data = get_zone_data()
-    min_date = fmt.to_date(df["timestamp"].min())
-    max_date = fmt.to_date(df["timestamp"].max())
-    default_start = max(min_date, max_date - timedelta(days=6))
+    frame = ctx.frame
+    if frame.empty:
+        st.error("Aucune mesure réelle disponible.")
+        return
+
+    zone_data = ctx.zones
+    min_date = fmt.to_date(frame["timestamp"].min())
+    max_date = fmt.to_date(frame["timestamp"].max())
+    default_start = max(min_date, max_date - timedelta(days=13))
 
     # ------------------------------------------------------------------
     # Filtres
@@ -68,8 +84,8 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
     with st.container(border=True):
         panel_head(
             "Filtres d'analyse",
-            "Les contrôles ci-dessous actualisent immédiatement les KPI, graphiques et le journal.",
-            tag="Interaction locale",
+            "Les contrôles actualisent immédiatement KPI, graphiques, anomalies et journal.",
+            tag="DONNÉES RÉELLES",
             icon_name="sliders",
         )
         filter_col_1, filter_col_2, filter_col_3 = st.columns([1.1, 0.85, 1.95])
@@ -91,11 +107,11 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
             )
         with filter_col_3:
             selected_zones = st.multiselect(
-                "Zones du bâtiment",
+                "Zones (répartition estimée)",
                 options=ZONE_NAMES,
                 default=ZONE_NAMES,
                 key="energy_zones",
-                help="Sélectionnez une ou plusieurs zones pour recomposer la consommation.",
+                help="Le bâtiment ne dispose que d'un compteur global : la répartition par zone est une estimation.",
             )
 
     if isinstance(date_value, (tuple, list)):
@@ -111,19 +127,19 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
         start_date, end_date = default_start, max_date
 
     if not selected_zones:
-        st.warning("Sélectionnez au moins une zone du bâtiment pour afficher les mesures.")
-        demo_notice("Aucune donnée n'est chargée depuis un service externe.")
+        st.warning("Sélectionnez au moins une zone pour recomposer la consommation.")
+        demo_notice("Aucun compteur par zone n'est présent dans le jeu ASHRAE.")
         return
 
     filtered_zones = calc.filter_zones(zone_data, selected_zones)
     filtered_zones = calc.filter_date_range(filtered_zones, start_date, end_date)
     filtered_zones = calc.filter_time_period(filtered_zones, time_period)
+    filtered_frame = calc.filter_date_range(frame, start_date, end_date)
+    filtered_frame = calc.filter_time_period(filtered_frame, time_period)
 
-    if filtered_zones.empty:
-        st.warning(
-            "Aucune mesure ne correspond aux filtres sélectionnés. Élargissez la plage de dates."
-        )
-        demo_notice("Aucune donnée n'est chargée depuis un service externe.")
+    if filtered_zones.empty or filtered_frame.empty:
+        st.warning("Aucune mesure ne correspond aux filtres sélectionnés.")
+        demo_notice("Élargissez la plage de dates ou la plage horaire.")
         return
 
     hourly = (
@@ -132,7 +148,6 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
         .sort_values("timestamp")
     )
     hourly["power_kw"] = hourly["consumption_kwh"]  # pas horaire de 1 h
-
     total = float(hourly["consumption_kwh"].sum())
     hours = int(len(hourly))
     avg_power = total / hours if hours else 0.0
@@ -155,6 +170,7 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
     )
     zone_summary = calc.zone_summary(filtered_zones)
     total_zone = float(zone_summary["consumption_kwh"].sum()) if not zone_summary.empty else 0.0
+    threshold = float(calc.PEAK_POWER_THRESHOLD_KW)
 
     # ------------------------------------------------------------------
     # KPI
@@ -167,7 +183,7 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
                 "unit": "kWh",
                 "icon": "bolt",
                 "accent": "blue",
-                "note": f"{fmt.fr_number(hours, 0)} heures filtrées",
+                "note": f"{fmt.fr_number(hours, 0)} heures filtrées · réel",
             },
             {
                 "label": "Puissance moyenne",
@@ -197,6 +213,29 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
         columns=4,
     )
 
+    with st.container(border=True):
+        panel_head(
+            "Compteur et usage",
+            "Nature des mesures disponibles dans le jeu de données ASHRAE traité",
+            tag="MÉTADONNÉES",
+            icon_name="database",
+        )
+        st.markdown(
+            f"""
+<div class="dataset-facts" style="border-top:none;padding-top:0">
+  <div><div class="k">Compteur</div><div class="v">Électricité · meter 0</div></div>
+  <div><div class="k">Bâtiment</div><div class="v">#{ctx.building_id} · site {ctx.site_id}</div></div>
+  <div><div class="k">Pas de mesure</div><div class="v">Horaire</div></div>
+  <div><div class="k">Autres compteurs</div><div class="v">Non fournis</div></div>
+</div>
+<div class="upload-note" style="margin-top:10px">
+  Le jeu traité ne contient que le compteur électrique (0). Aucune donnée de chauffage,
+  vapeur ou eau glacée n'est disponible : aucun graphique par type de compteur n'est simulé.
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
     # ------------------------------------------------------------------
     # Graphiques
     # ------------------------------------------------------------------
@@ -204,7 +243,7 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
         panel_head(
             "Consommation électrique horaire",
             f"{fmt.fr_date(start_date)} → {fmt.fr_date(end_date)} · {time_period}",
-            tag="kWh / h",
+            tag="MESURES RÉELLES",
             icon_name="activity",
         )
         render_chart(fig_hourly_consumption(hourly), key="en_hourly")
@@ -223,36 +262,141 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
         with st.container(border=True):
             panel_head(
                 "Consommation par zone",
-                f"{fmt.fr_number(total_zone, 0)} kWh répartis sur {len(zone_summary)} zone(s)",
-                tag="Répartition",
+                f"{fmt.fr_number(total_zone, 0)} kWh estimés sur {len(zone_summary)} zone(s)",
+                tag="ESTIMATION",
                 icon_name="building",
             )
             render_chart(fig_zone_distribution(zone_summary), key="en_zones")
 
+    left, right = st.columns(2, gap="medium")
+    with left:
+        with st.container(border=True):
+            panel_head(
+                "Analyse de la pointe de demande",
+                "Puissance maximale horaire par jour et seuil de surveillance (hypothèse)",
+                tag="kW",
+                icon_name="trend-up",
+            )
+            render_chart(fig_peak_demand(daily, threshold), key="en_peak")
+    with right:
+        with st.container(border=True):
+            panel_head(
+                "Profil horaire moyen",
+                "Consommation moyenne par heure de la journée",
+                tag="kWh / h",
+                icon_name="clock",
+            )
+            render_chart(
+                fig_hourly_profile(hourly_profile(filtered_frame)), key="en_profile"
+            )
+
+    # ------------------------------------------------------------------
+    # Comparaison entre bâtiments réels
+    # ------------------------------------------------------------------
+    section_heading(
+        "Comparaison entre bâtiments",
+        "Consommations réelles ASHRAE sur la même fenêtre — aucun scénario synthétique.",
+        right_html=status_pill("DONNÉES RÉELLES", "good"),
+        kicker="PARC DE BÂTIMENTS",
+    )
     with st.container(border=True):
         panel_head(
-            "Analyse de la pointe de demande",
-            "Puissance maximale horaire par jour et seuil de surveillance simulé",
-            tag="kW",
-            icon_name="trend-up",
+            "Sélection de bâtiments de comparaison",
+            "Choisissez jusqu'à 6 bâtiments de bureaux disposant de 744 heures complètes.",
+            tag="FILTRE ACTIF",
+            icon_name="building",
+        )
+        candidate_ids = [
+            option["id"] for option in ctx.buildings if option["id"] != ctx.building_id
+        ]
+        defaults = [value for value in (520, 293, 375, 448) if value in candidate_ids][:3]
+        selected_buildings = st.multiselect(
+            "Bâtiments à comparer",
+            options=candidate_ids,
+            default=defaults,
+            key="compare_buildings",
+            format_func=lambda value: f"Bâtiment {value}",
+        )
+        if selected_buildings:
+            comparison = repository.get_comparison_series(
+                tuple([int(ctx.building_id), *[int(v) for v in selected_buildings]])
+            )
+            comparison = comparison[
+                (comparison["timestamp"] >= pd.Timestamp(start_date))
+                & (
+                    comparison["timestamp"]
+                    < pd.Timestamp(end_date) + pd.Timedelta(days=1)
+                )
+            ]
+            render_chart(fig_building_comparison(comparison), key="en_compare")
+        else:
+            st.info("Sélectionnez au moins un bâtiment pour afficher la comparaison.")
+
+    # ------------------------------------------------------------------
+    # Anomalies statistiques
+    # ------------------------------------------------------------------
+    section_heading(
+        "Identification d'anomalies",
+        "Méthode statistique simple : score Z |z| ≥ 3 par rapport à la moyenne horaire. "
+        "Aucun modèle d'apprentissage automatique n'est utilisé.",
+        right_html=status_pill("SEUILS STATISTIQUES", "info"),
+        kicker="ANOMALIES",
+    )
+    anomalies = detect_anomalies(filtered_frame)
+    thresholds = anomaly_thresholds(filtered_frame)
+    with st.container(border=True):
+        panel_head(
+            "Consommation et valeurs atypiques",
+            f"Moyenne {fmt.fr_power(thresholds['mean'])} · écart-type "
+            f"{fmt.fr_power(thresholds['std'])} · bornes ±3σ",
+            tag=f"{len(anomalies)} point(s)",
+            icon_name="activity",
         )
         render_chart(
-            fig_peak_demand(daily, calc.PEAK_POWER_THRESHOLD_KW), key="en_peak"
+            fig_anomalies(filtered_frame, anomalies, thresholds), key="en_anomalies"
         )
+        if anomalies.empty:
+            st.info(
+                "Aucune valeur ne dépasse le seuil |z| ≥ 3 sur la période filtrée. "
+                "Cela ne garantit pas l'absence d'anomalie de fonctionnement."
+            )
+        else:
+            table = anomalies.copy()
+            table["Horodatage"] = pd.to_datetime(table["timestamp"]).dt.strftime("%d/%m/%Y %H:%M")
+            table["Valeur"] = table["value"].map(lambda v: fmt.fr_number(v, 1))
+            table["Score Z"] = table["zscore"].map(lambda v: fmt.fr_number(v, 2))
+            st.dataframe(
+                table[["Horodatage", "scale", "Valeur", "Score Z", "direction", "severity"]]
+                .rename(
+                    columns={
+                        "scale": "Échelle",
+                        "direction": "Écart",
+                        "severity": "Sévérité",
+                    }
+                )
+                .head(100),
+                width="stretch",
+                hide_index=True,
+                height=260,
+            )
 
     # ------------------------------------------------------------------
     # Journal des mesures
     # ------------------------------------------------------------------
     section_heading(
         "Journal des mesures",
-        "Dernières lignes correspondant aux filtres actifs · horodatage simulé.",
-        right_html=status_pill(f"{fmt.fr_number(len(filtered_zones), 0)} mesures", "info"),
+        "Dernières lignes correspondant aux filtres actifs · mesures ASHRAE réelles.",
+        right_html=status_pill(
+            f"{fmt.fr_number(len(filtered_zones), 0)} lignes", "info"
+        ),
         kicker="DONNÉES DÉTAILLÉES",
     )
 
     table = filtered_zones.sort_values("timestamp", ascending=False).head(250).copy()
     table["status"] = table["timestamp"].map(
-        hourly.set_index("timestamp")["consumption_kwh"].apply(_status_for_power)
+        hourly.set_index("timestamp")["consumption_kwh"].apply(
+            lambda value: _status_for_power(value, threshold)
+        )
     )
     display = pd.DataFrame(
         {
@@ -275,7 +419,7 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
                 "Horodatage": st.column_config.DatetimeColumn(
                     "Horodatage", format="DD/MM/YYYY HH:mm", width="medium"
                 ),
-                "Zone": st.column_config.TextColumn("Zone du bâtiment", width="medium"),
+                "Zone": st.column_config.TextColumn("Zone (estimée)", width="medium"),
                 "Consommation (kWh)": st.column_config.NumberColumn(
                     "Consommation (kWh)", format="%.2f", width="small"
                 ),
@@ -291,19 +435,19 @@ def render(df: pd.DataFrame, config: dict[str, Any]) -> None:
             st.download_button(
                 "Exporter en CSV",
                 data=csv,
-                file_name="sbems_mesures_simulees.csv",
+                file_name="sbems_consommation_ashrae.csv",
                 mime="text/csv",
                 key="energy_export",
             )
         with export_note:
             st.markdown(
                 f'<div class="upload-note">{icon("info", size=12)} '
-                f"Affichage limité aux 250 lignes les plus récentes sur "
-                f"{fmt.fr_number(len(filtered_zones), 0)}. Export local, sans backend.</div>",
+                f"250 lignes affichées sur {fmt.fr_number(len(filtered_zones), 0)}. "
+                "La répartition par zone est estimée ; le total est réel.</div>",
                 unsafe_allow_html=True,
             )
 
     demo_notice(
-        "Les mesures, statuts et pointes sont calculés à partir des données synthétiques. "
-        "Aucun compteur communicant n'est relié à l'application."
+        "Les consommations et les bâtiments comparés sont réels. Les zones, les usages "
+        "finaux et le seuil de pointe sont des hypothèses de démonstration."
     )

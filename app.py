@@ -1,14 +1,14 @@
 """SBEMS — Smart Building Energy Management System.
 
-Point d'entrée Streamlit. L'application est volontairement limitée au
-front-end : toutes les données proviennent de ``data.mock_data``.
+Point d'entrée Streamlit. Les données proviennent des jeux réels extraits de
+la branche ``hanine`` (ASHRAE 2016, centrale PV 2020) ; le scénario combiné
+est explicitement modélisé et la batterie simulée.
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
-# Configuration de page : doit être le premier appel Streamlit.
 st.set_page_config(
     page_title="SBEMS · Smart Building EMS",
     page_icon="assets/logo.png",
@@ -17,7 +17,7 @@ st.set_page_config(
     menu_items={
         "About": (
             "SBEMS — Smart Building Energy Management System\n\n"
-            "Démonstrateur front-end · DEMO MODE – SIMULATED DATA\n"
+            "Données historiques réelles + scénario modélisé + batterie simulée.\n"
             "Aucune connexion backend, base de données ou IoT."
         )
     },
@@ -25,8 +25,7 @@ st.set_page_config(
 
 from components.sidebar import render_sidebar  # noqa: E402
 from components.ui import page_footer  # noqa: E402
-from data.mock_data import get_energy_data  # noqa: E402
-from utils.calculations import latest_timestamp  # noqa: E402
+from data import repository  # noqa: E402
 from utils.config import APP_VERSION, get_config, init_session_state  # noqa: E402
 from utils.theme import inject_css  # noqa: E402
 from views import (  # noqa: E402
@@ -52,12 +51,17 @@ def main() -> None:
     inject_css()
     init_session_state()
 
-    df = get_energy_data()
-    page_key = render_sidebar(latest_timestamp(df))
+    page_key = render_sidebar()
+
+    building_id = int(st.session_state.get("building_id", 520))
+    pv_ratio = float(st.session_state.get("pv_ratio", 0.75))
     config = get_config()
+    capacity = float(config.get("battery_capacity_kwh", 200.0))
+
+    ctx = repository.get_context(building_id, pv_ratio, capacity)
 
     renderer = PAGES.get(page_key, overview.render)
-    renderer(df, config)
+    renderer(ctx, config)
 
     page_footer(APP_VERSION)
 

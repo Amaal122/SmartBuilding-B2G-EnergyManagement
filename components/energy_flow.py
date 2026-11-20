@@ -74,7 +74,7 @@ def energy_flow_diagram(kpis: dict[str, Any], battery_capacity: float) -> None:
   <text x="48" y="98" font-size="27" font-weight="800" fill="{NAVY}">
     {_value(solar)}<tspan font-size="12" font-weight="600" fill="#64748B"> kWh</tspan>
   </text>
-  <text x="48" y="122" font-size="10.5" fill="#64748B">Période analysée · donnée simulée</text>
+  <text x="48" y="122" font-size="10.5" fill="#64748B">Centrale PV réelle · mise à l'échelle</text>
 
   <!-- Import réseau -->
   <rect x="24" y="240" width="252" height="112" rx="15" fill="#EFF6FF" stroke="#BFDBFE"/>
@@ -83,7 +83,7 @@ def energy_flow_diagram(kpis: dict[str, Any], battery_capacity: float) -> None:
   <text x="48" y="308" font-size="27" font-weight="800" fill="{NAVY}">
     {_value(grid_import)}<tspan font-size="12" font-weight="600" fill="#64748B"> kWh</tspan>
   </text>
-  <text x="48" y="332" font-size="10.5" fill="#64748B">Fourniture électrique · simulée</text>
+  <text x="48" y="332" font-size="10.5" fill="#64748B">Bilan calculé · mesure ASHRAE réelle</text>
 
   <!-- Bâtiment -->
   <rect x="374" y="115" width="252" height="150" rx="16" fill="#F8FAFC" stroke="#CBD5E1"/>

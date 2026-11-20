@@ -11,16 +11,29 @@ import streamlit as st
 
 APP_NAME = "Smart Building Energy Management System"
 APP_SHORT = "SBEMS"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 DEMO_LABEL = "DEMO MODE – SIMULATED DATA"
+DATA_LABEL = "REAL DATA + MODELED SCENARIO"
 
 DEFAULT_CONFIG: dict[str, object] = {
-    "building_name": "Smart Campus Building",
-    "location": "Paris, France",
-    "pv_capacity_kwp": 150.1,
+    "building_name": "Bâtiment de bureaux ASHRAE #520",
+    "location": "Site 3 · ASHRAE GE III",
+    "pv_capacity_kwp": 151.3,
     "battery_capacity_kwh": 200.0,
+    "battery_initial_soc": 50.0,
+    "battery_max_charge_kw": 50.0,
+    "battery_max_discharge_kw": 50.0,
+    "battery_charge_efficiency": 0.95,
+    "battery_discharge_efficiency": 0.95,
+    "battery_min_soc": 10.0,
+    "battery_max_soc": 95.0,
     "currency": "EUR",
     "energy_cost": 0.2516,
+    "export_price": 0.05,
+    "battery_cost_per_kwh": 350.0,
+    "pv_cost_per_kwp": 900.0,
+    "om_rate_pct": 1.0,
+    "lifetime_years": 15,
 }
 
 CURRENCIES: dict[str, dict[str, str]] = {
