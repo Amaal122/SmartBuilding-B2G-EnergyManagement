@@ -21,6 +21,18 @@ pour un projet d'ingénierie **Smart Building / Building-to-Grid (B2G)**.
 | **Environnement & Équipements** | Météo réelle (température, vent, nébulosité, point de rosée, précipitations), ambiance intérieure simulée, inventaire des équipements et préparation MQTT/Modbus/BACnet. |
 | **Données & Configuration** | Inventaire des 7 jeux réels, dimensions/colonnes/types/manquants/couverture/fréquence, import CSV/XLSX validé, export du scénario, paramètres de simulation et diagnostic système. |
 
+### Guide de démonstration (5 minutes)
+
+L'interface est volontairement épurée : une seule idée par page, un graphique principal
+et peu de texte. Parcours conseillé pour une présentation :
+
+1. **Vue Générale** — montrer les 6 KPI et la courbe consommation / production.
+2. **Surveillance** — changer la plage de dates, montrer le journal et l'export CSV.
+3. **Photovoltaïque** — expliquer le passage du pas 15 min au pas horaire.
+4. **Batterie & Réseau** — modifier la capacité et comparer les scénarios A et B.
+5. **Environnement** — montrer la différence entre météo réelle et capteurs simulés.
+6. **Données & Configuration** — ouvrir un jeu réel, importer un CSV, sauvegarder la configuration.
+
 ---
 
 ## 2. Données sources (branche `hanine`)
